@@ -29,11 +29,13 @@ Check if the domainname is set correctly (`hostname -f`).
 
 ### Method 3: specify url manually
 
-`docker run \
+```shell
+docker run \
 --rm \
 --net=host \
 -e METADATA_SERVER=https://metadata.example.com \
-metadata-proxy`
+metadata-proxy
+```
 
 ## Usage:
 
