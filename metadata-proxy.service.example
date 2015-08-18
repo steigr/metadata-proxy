@@ -1,0 +1,22 @@
+#
+# Service example:
+# Remove Link-Local-Addresses
+# Assign new static one (169.254.169.254/16)
+# Start the Proxy
+# Check README.md and user_data.yaml.example how to configure
+[Unit]
+Description=Metadata-Proxy
+Requires=early-docker.service
+After=early-docker.service
+Before=early-docker.target
+
+[Service]
+Environment=DOCKER_HOST=unix:///run/early-docker.sock
+Environment=METADATA_PROXY_OPTS=
+# Remove Link-Local-Addresses
+ExecStartPre=-/bin/sh -c "ip -o addr | grep 169.254 | awk '{print $4 " dev " $2 }' | xargs -n1 -IA ip addr del A"
+# Add Link-Local-Metadata-Server address
+ExecStartPre=-/bin/sh -c "find /sys/class/net/*/ -name device | awk -F/ '{print $5}' | xargs -n1 -ID ip addr add 169.254.169.254/16 scope link dev D"
+# Docker Stuff
+ExecStartPre=/usr/bin/docker pull steigr/metadata-proxy
+ExecStart=/usr/bin/docker run --rm --net=host ${METADATA_PROXY_OPTS} steigr/metadata-proxy

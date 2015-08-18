@@ -1,0 +1,11 @@
+#cloud-config
+---
+coreos:
+  units:
+  - name: metadata-proxy.service
+    runtime: yes
+    drop-ins:
+    - name: 10-metadata-proxy-opts.conf
+      content: |-
+        [Service]
+        Environment=METADATA_PROXY_OPTS=--env="METADATA_SERVER=http://127.0.0.1:9292"
