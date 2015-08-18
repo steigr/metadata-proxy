@@ -1,0 +1,74 @@
+#!/usr/bin/env ruby
+
+require "resolv"
+require "net/http/server"
+require "unirest"
+require "uuidtools"
+require "logger"
+
+$host    = "169.254.169.254"
+$port    = "80"
+$logger  = Logger.new(STDOUT)
+
+STDOUT.sync = true
+
+def select_server servers
+	servers.invert.sort.to_h.values.first
+end
+
+def servers_from_dns rr
+	srv_rr    = Resolv::DNS::Resource::IN::SRV
+	resolver  = Resolv::DNS.new
+	servers   = resolver.getresources(rr,srv_rr).collect do |res|
+		scheme = ( res.port == 443 ) ? "https" : "http"
+		[ "#{scheme}://#{res.target.to_s}:#{res.port}", [ res.priority, res.weight] ]
+	end.to_h
+end
+
+rr_prefix = "_metadata-service._tcp"
+rr_suffix = `hostname -d`.strip
+rr_suffix = ENV['DNS_DOMAIN'] if rr_suffix.empty?
+
+rr        = [rr_prefix,rr_suffix].join(".")
+$server    = select_server servers_from_dns rr
+$server  ||= ENV["METADATA_SERVER"]
+
+if $server.nil? or $server.empty?
+	puts <<-ERROR_MSG
+Metadata-Server could not be detected.
+
+Please provide either the DNS-SRV-RR #{rr}
+or METADATA_SERVER environment variable with the target URL.
+
+For DNS-Detection a valid dns-domainname must be set
+or provided via DNS_DOMAIN environment variable.
+
+ERROR_MSG
+	exit 1
+end
+
+$logger.info "Metadata-Proxy"
+$logger.info "Listening : http://#{$host}:#{$port}"
+$logger.info "Target    : #{$server}"
+
+$headers = {"Content-Type" => "text/yaml"}
+
+begin
+	Net::HTTP::Server.run(host:$host,port:$port) do |request,stream|
+		begin
+			id = request[:uri][:path].to_s[1..-1]
+			raise Exception.new("Wrong ID-Format") unless id.size == 32
+			raise Exception.new("Wrong ID-Format") unless id.match(/[a-f0-9]+/).to_s.size == 32
+			$logger.info "Provide user_data for machine #{id}"
+			user_data = Unirest.get("#{$server}/machines/#{id}/user_data.yaml")
+			[ user_data.code,$headers,[user_data.raw_body]]
+		rescue Exception => e
+			puts e.inspect
+			[ 500, {"Content-Type"=>"text/plain"}, [e.to_s] ]
+		end
+	end
+rescue Interrupt
+	STDOUT.write ("\b" * 80)
+	$logger.info "Terminating"
+	exit 0
+end
